@@ -1,6 +1,6 @@
 # Misión Chocó 2026 · Compras de materiales
 
-Página para que cada equipo registre sus compras: check de comprado, cantidad, valor pagado, quién lo compró, notas y foto del recibo. Los materiales de Quibdó y la partida de dulces quedan en el grupo «Carlos · avanzada». Se publica en GitHub Pages y guarda en la hoja «Compras Chocó 2026» a través de Apps Script.
+Página de compras repartida por tienda: cada equipo compra en un tipo de tienda lo de todos los grupos (E1 mercería y papelería de oficina · E2 impresiones · E3 papelería escolar · E4 deportes y especializados · E5 variedades · Carlos y avanzada en Quibdó). Cada material indica el líder dueño. Registran comprado, cantidad, valor pagado, quién compró, notas y foto del recibo. Guarda en la hoja «Compras Chocó 2026» vía Apps Script.
 
 Publicada en: `https://mateolaverde97-byte.github.io/mision-choco-compras/`
 
