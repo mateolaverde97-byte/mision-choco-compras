@@ -87,6 +87,20 @@ button{cursor:pointer}
 .tag.b{background:var(--teal);border-color:var(--teal);color:var(--paper)}
 .owner{margin-top:7px;font-size:13.5px;font-weight:550}
 .owner b{font-weight:800}
+.item.sel{outline:4px solid var(--teal);outline-offset:-2px}
+.pickbox{display:flex;align-items:center;gap:9px;padding:10px 14px;border-bottom:1.5px solid var(--ink);background:rgba(14,159,154,.12);font-weight:800;font-size:14px;cursor:pointer}
+.pickbox input{width:20px;height:20px;accent-color:var(--teal)}
+.selbtn{margin-top:14px;width:100%;min-height:48px;border:2px solid var(--ink);background:var(--lime);font-weight:800;font-size:15px}
+.selbtn[aria-pressed="true"]{background:var(--paper)}
+.batch{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--ink);color:var(--paper);padding:12px 18px calc(12px + env(safe-area-inset-bottom))}
+.batch .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;align-items:end}
+.batch .t{grid-column:1 / -1;font-weight:800;font-size:15px}
+.batch label span{display:block;font-stretch:112%;font-weight:800;font-size:10px;letter-spacing:.07em;text-transform:uppercase;margin-bottom:3px}
+.batch input[type=number]{width:100%;border:1.5px solid var(--paper);background:#fff;color:var(--ink);padding:8px 10px;font-weight:700;font-size:15px}
+.batch .go{display:flex;align-items:center;justify-content:center;min-height:44px;border:2px solid var(--lime);background:var(--lime);color:var(--ink);font-weight:800;font-size:14px;cursor:pointer;text-align:center;padding:0 10px}
+.batch .go input{display:none}
+.batch .ghost{min-height:44px;border:1.5px solid var(--paper);background:none;color:var(--paper);font-weight:800;font-size:14px}
+.batch small{grid-column:1 / -1;font-size:12.5px;opacity:.85}
 .note.warn{background:var(--red);color:#fff}
 .pend{border:2px solid var(--ink);background:var(--card);padding:4px 0 6px}
 .pend li{margin:0;padding:9px 15px;border-top:1px solid var(--line);list-style:none;font-size:15px;font-weight:550}
@@ -187,6 +201,7 @@ let VIEW = lsGet('cc_view', '');
 const DIRTY = {};                      // id -> patch pendiente
 const TIMERS = {};
 let ONLINE = !!API, BUSY = 0;
+let SELMODE = false; const SEL = new Set();
 
 function st(i){ const r = REC[i.id] || {}; return {
   cant: (r.cantidad == null || isNaN(r.cantidad)) ? i.qb : r.cantidad,
@@ -280,7 +295,7 @@ async function unlink(id, fid){
 }
 
 /* ---------- vistas ---------- */
-function go(v){ VIEW = v; lsSet('cc_view', v); render(); window.scrollTo(0, 0); }
+function go(v){ SELMODE = false; SEL.clear(); VIEW = v; lsSet('cc_view', v); render(); window.scrollTo(0, 0); }
 function refresh(){ // re-render conservando foco y cursor
   const a = document.activeElement; const id = a && a.id; let sel = null;
   if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA')) try { sel = [a.selectionStart, a.selectionEnd]; } catch(_){}
@@ -293,6 +308,7 @@ function render(keep){
   if (!VIEW) app.innerHTML = homeHTML();
   else if (VIEW === 'R') app.innerHTML = summaryHTML();
   else app.innerHTML = groupHTML(VIEW);
+  renderBatch();
 }
 function homeHTML(){
   const picks = GROUPS.map(g => { const s = stats(groupItems(g.k));
@@ -326,9 +342,11 @@ function homeHTML(){
 }
 function itemHTML(i){
   const s = st(i); const y = i.cat === 'Y';
-  const recs = s.recibos.map(r => `<a href="${esc(r.url)}" target="_blank" rel="noopener">🧾 <span>${esc(r.name)}</span></a><button class="x" data-unlink="${esc(r.fid)}" data-id="${i.id}" aria-label="Quitar recibo ${esc(r.name)}">×</button>`).join('');
+  const recs = s.recibos.map(r => `<a href="${esc(r.url)}" target="_blank" rel="noopener">🧾 <span>${esc(r.name)}${r.shared ? ' · compartido (' + r.shared + ')' : ''}${r.total ? ' · ' + fmt(r.total) : ''}</span></a><button class="x" data-unlink="${esc(r.fid)}" data-id="${i.id}" aria-label="Quitar recibo ${esc(r.name)}">×</button>`).join('');
   const who = s.editor ? `Último cambio: ${esc(s.editor)}${s.at ? ' · ' + new Date(s.at).toLocaleString('es-CO', {day:'numeric', month:'short', hour:'numeric', minute:'2-digit'}) : ''}` : '';
-  return `<article class="item${s.comprado ? ' done' : ''}" id="it-${i.id}">
+  const selectable = SELMODE && !y && s.cant > 0;
+  return `<article class="item${s.comprado ? ' done' : ''}${selectable && SEL.has(i.id) ? ' sel' : ''}" id="it-${i.id}">
+    ${selectable ? `<label class="pickbox"><input type="checkbox" data-sel="${i.id}" ${SEL.has(i.id) ? 'checked' : ''}> Incluir en el recibo</label>` : ''}
     <div class="ih"><div>
       <div class="nm">${esc(i.n)}</div><div class="dt">${esc(i.d)}</div>
       <div class="tags"><span class="tag b">${esc(i.b)}</span><span class="tag">${esc(i.act)}</span></div>
@@ -362,6 +380,8 @@ function groupHTML(k){
       <div class="stat"><div class="k">Comprados</div><div class="v num">${s.done} / ${s.n}</div></div>
     </div>
     <div class="prog" aria-hidden="true"><i style="width:${s.n ? s.done / s.n * 100 : 0}%"></i></div>
+    <button class="selbtn" data-selmode="1" aria-pressed="${SELMODE}">${SELMODE ? 'Cancelar selección' : '🧾 Un recibo para varios materiales'}</button>
+    ${SELMODE ? '<p class="help">Marca «Incluir en el recibo» en los materiales que compraste juntos. Abajo adjuntas la foto una sola vez.</p>' : ''}
     ${!API ? '<div class="banner"><b>Modo prueba.</b> Los cambios se guardan solo en este celular.</div>' : ''}
   </section>`;
   for (const c of order){
@@ -393,6 +413,44 @@ function summaryHTML(){
 }
 function stamp(id){ const el = document.getElementById('sv-' + id); const s = st(BYID[id]); if (el && s.editor) el.textContent = 'Guardado · ' + s.editor; }
 
+function batchHTML(){
+  if (!SELMODE || !VIEW || VIEW === 'R') return '';
+  const ids = [...SEL]; const plan = ids.reduce((a, id) => a + planOf(BYID[id]), 0);
+  return `<div class="batch" role="region" aria-label="Recibo para varios materiales"><div class="in">
+    <div class="t">${ids.length} material${ids.length === 1 ? '' : 'es'} seleccionado${ids.length === 1 ? '' : 's'} · plan ${fmt(plan)}</div>
+    <label><span>Valor total del recibo</span><input type="number" id="btotal" min="0" step="100" inputmode="numeric" placeholder="$"></label>
+    <label class="go">🧾 Adjuntar recibo${ids.length ? ' a los ' + ids.length : ''}<input type="file" accept="image/*,application/pdf" data-batch="1" ${ids.length ? '' : 'disabled'}></label>
+    <button class="ghost" data-bdone="1" ${ids.length ? '' : 'disabled'}>✓ Solo marcar comprados</button>
+    <button class="ghost" data-selmode="0">Cancelar</button>
+    <small>Al adjuntar, los materiales quedan como comprados y el valor total se reparte según el plan de cada uno. Luego pueden ajustar cada valor.</small>
+  </div></div>`;
+}
+function markBatch(total){
+  const ids = [...SEL]; const plan = ids.reduce((a, id) => a + planOf(BYID[id]), 0);
+  let left = total;
+  ids.forEach((id, k) => { const i = BYID[id]; const p = {comprado: true};
+    if (!st(i).quien && ME) p.quien = ME;
+    if (total != null){ const v = k === ids.length - 1 ? left : Math.round(total * (plan ? planOf(i) / plan : 1 / ids.length) / 100) * 100; left -= v; p.valor = v; }
+    queue(id, p); });
+}
+async function batchUpload(file){
+  const ids = [...SEL]; if (!file || !ids.length) return;
+  if (!API){ toast('En modo prueba no se pueden subir recibos.'); return; }
+  if (file.size > 15 * 1024 * 1024){ toast('El archivo pesa más de 15 MB.'); return; }
+  const tv = document.getElementById('btotal'); const total = tv && tv.value !== '' ? Math.max(0, Number(tv.value)) : null;
+  BUSY++; setSync(); toast('Subiendo recibo para ' + ids.length + ' materiales…');
+  try {
+    const f = await shrink(file); const metas = Object.fromEntries(ids.map(id => [id, meta(BYID[id])]));
+    const j = await post({action:'upload', id: ids[0], ids, metas, total, editor: ME, name: f.name, mime: f.mime, data: f.data});
+    for (const id of ids){ const r = (j.recs || {})[id]; if (r) REC[id] = Object.assign({}, REC[id] || {}, {recibos: r.recibos, actualizado: r.actualizado, editor: r.editor}); }
+    lsSet('cc_rec', REC); ONLINE = true;
+    markBatch(total); SEL.clear(); SELMODE = false; toast('Recibo guardado en ' + ids.length + ' materiales.'); render(); }
+  catch(e){ toast('No se pudo subir: ' + e.message); }
+  finally { BUSY--; setSync(); }
+}
+function renderBatch(){ let el = document.getElementById('batch'); if (!el){ el = document.createElement('div'); el.id = 'batch'; document.body.appendChild(el); }
+  el.innerHTML = batchHTML(); document.body.style.paddingBottom = SELMODE && VIEW && VIEW !== 'R' ? '190px' : ''; }
+
 /* ---------- eventos ---------- */
 document.addEventListener('click', e => {
   const g = e.target.closest('[data-go]'); if (g){ if (!ME){ const m = document.getElementById('me'); if (m){ m.focus(); toast('Escribe tu nombre primero.'); return; } } go(g.dataset.go); return; }
@@ -401,6 +459,8 @@ document.addEventListener('click', e => {
     const p = {comprado: now}; if (now && !st(BYID[id]).quien && ME && BYID[id].cat !== 'Y') p.quien = ME;
     queue(id, p); refresh(); return; }
   const u = e.target.closest('[data-unlink]'); if (u){ unlink(u.dataset.id, u.dataset.unlink); }
+  const sm = e.target.closest('[data-selmode]'); if (sm){ SELMODE = sm.dataset.selmode === '1' ? !SELMODE : false; if (!SELMODE) SEL.clear(); refresh(); return; }
+  const bd = e.target.closest('[data-bdone]'); if (bd && SEL.size){ const tv = document.getElementById('btotal'); markBatch(tv && tv.value !== '' ? Math.max(0, Number(tv.value)) : null); toast(SEL.size + ' materiales marcados como comprados.'); SEL.clear(); SELMODE = false; refresh(); }
 });
 document.addEventListener('input', e => {
   const t = e.target;
@@ -411,6 +471,8 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.up){ upload(t.dataset.up, t.files[0]); t.value = ''; }
+  if (t.dataset.sel){ if (t.checked) SEL.add(t.dataset.sel); else SEL.delete(t.dataset.sel); const art = t.closest('.item'); if (art) art.classList.toggle('sel', t.checked); renderBatch(); }
+  if (t.dataset.batch){ batchUpload(t.files[0]); t.value = ''; }
   if (t.dataset.f === 'cantidad') refresh();
 });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(); });

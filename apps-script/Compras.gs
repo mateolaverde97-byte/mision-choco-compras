@@ -1,6 +1,6 @@
 /**
  * Misión Chocó 2026 · Compras de materiales
- * Backend en Google Apps Script para la página /compras/ de GitHub Pages.
+ * Backend en Google Apps Script para la página de compras (GitHub Pages).
  *
  * Guarda una fila por material (pestaña "items"), un historial de cambios (pestaña "historial")
  * y los recibos en la carpeta de Drive "Recibos · Compras Chocó 2026".
@@ -78,6 +78,14 @@ function rowFor_(sh, id, meta) {
   return sh.getLastRow();
 }
 
+function applyMeta_(cur, meta) {
+  const m = meta || {};
+  if (m.equipo) cur[1] = m.equipo;
+  if (m.bloque) cur[2] = m.bloque;
+  if (m.actividad) cur[3] = m.actividad;
+  if (m.material) cur[4] = m.material;
+}
+
 function doGet(e) {
   try {
     const sh = sheet_();
@@ -113,10 +121,36 @@ function doPost(e) {
 
     lock.waitLock(20000);
     const sh = sheet_();
-    const row = rowFor_(sh, id, body.meta);
-    const cur = sh.getRange(row, 1, 1, HEAD.length).getValues()[0];
     const now = new Date();
     const editor = String(body.editor || '');
+    const hi = SpreadsheetApp.getActive().getSheetByName(SH_HIST);
+
+    // Un mismo recibo para varios materiales: body.ids = [id1, id2, ...], body.metas = {id: meta}
+    if (action === 'upload') {
+      const ids = (Array.isArray(body.ids) && body.ids.length ? body.ids : [id]).map(String);
+      const metas = body.metas || {};
+      const r = { fid: file.getId(), url: file.getUrl(), name: String(body.name || 'recibo'), at: now.getTime(), by: editor,
+                  total: body.total === undefined || body.total === null || body.total === '' ? null : Number(body.total),
+                  shared: ids.length > 1 ? ids.length : 0 };
+      const recs = {};
+      ids.forEach(one => {
+        const row = rowFor_(sh, one, metas[one] || (one === id ? body.meta : null));
+        const cur = sh.getRange(row, 1, 1, HEAD.length).getValues()[0];
+        let rec = [];
+        try { rec = cur[10] ? JSON.parse(cur[10]) : []; } catch (x) { rec = []; }
+        rec.push(r);
+        cur[10] = JSON.stringify(rec);
+        applyMeta_(cur, metas[one] || (one === id ? body.meta : null));
+        cur[11] = now; cur[12] = editor; cur[13] = (Number(cur[13]) || 0) + 1;
+        sh.getRange(row, 1, 1, HEAD.length).setValues([cur]);
+        recs[one] = rowToRec_(cur);
+        if (hi) hi.appendRow([now, one, 'upload', editor, JSON.stringify({ recibo: r.name, compartido_con: ids.length, total: r.total })]);
+      });
+      return out_({ ok: true, rec: recs[id] || recs[ids[0]], recs: recs });
+    }
+
+    const row = rowFor_(sh, id, body.meta);
+    const cur = sh.getRange(row, 1, 1, HEAD.length).getValues()[0];
     let changes = {};
 
     if (action === 'save') {
@@ -130,13 +164,6 @@ function doPost(e) {
         cur[FIELDS[k]] = v;
         changes[k] = v;
       });
-    } else if (action === 'upload') {
-      let rec = [];
-      try { rec = cur[10] ? JSON.parse(cur[10]) : []; } catch (x) { rec = []; }
-      const r = { fid: file.getId(), url: file.getUrl(), name: String(body.name || 'recibo'), at: now.getTime(), by: editor };
-      rec.push(r);
-      cur[10] = JSON.stringify(rec);
-      changes = { recibo: r.name };
     } else if (action === 'unlink') {
       let rec = [];
       try { rec = cur[10] ? JSON.parse(cur[10]) : []; } catch (x) { rec = []; }
@@ -144,22 +171,20 @@ function doPost(e) {
       rec = rec.filter(r => r.fid !== fid);
       cur[10] = JSON.stringify(rec);
       changes = { quitar_recibo: fid };
-      try { DriveApp.getFileById(fid).setTrashed(true); } catch (x) {}
+      // Solo se manda a la papelera si ningún otro material usa el mismo recibo.
+      const last = sh.getLastRow();
+      const all = last < 2 ? [] : sh.getRange(2, 11, last - 1, 1).getValues();
+      const used = all.some((v, i) => i + 2 !== row && String(v[0]).indexOf(fid) >= 0);
+      if (!used) { try { DriveApp.getFileById(fid).setTrashed(true); } catch (x) {} }
     } else {
       return out_({ ok: false, error: 'acción no válida' });
     }
 
-    const m = body.meta || {};
-    if (m.equipo) cur[1] = m.equipo;
-    if (m.bloque) cur[2] = m.bloque;
-    if (m.actividad) cur[3] = m.actividad;
-    if (m.material) cur[4] = m.material;
+    applyMeta_(cur, body.meta);
     cur[11] = now;
     cur[12] = editor;
     cur[13] = (Number(cur[13]) || 0) + 1;
     sh.getRange(row, 1, 1, HEAD.length).setValues([cur]);
-
-    const hi = SpreadsheetApp.getActive().getSheetByName(SH_HIST);
     if (hi) hi.appendRow([now, id, action, editor, JSON.stringify(changes)]);
 
     return out_({ ok: true, rec: rowToRec_(cur) });
