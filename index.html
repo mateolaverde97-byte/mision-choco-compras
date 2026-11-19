@@ -104,6 +104,12 @@ button{cursor:pointer}
 .kd th.q{font-size:10px}
 .kd tr.ok td{background:rgba(30,142,85,.12)}
 .kn{margin:8px 12px 0;font-size:13px;font-weight:650;color:var(--muted)}
+.kn.rep{color:var(--ink);background:var(--paper);border:1.5px solid var(--ink);padding:8px 10px;font-weight:550}
+.kn.rep>b{display:block;font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:800;margin-bottom:4px}
+.kn.rep span{display:block;padding:3px 0;border-top:1px dashed rgba(0,0,0,.2);line-height:1.35}
+.kn.rep span:first-of-type{border-top:0}
+.kn.rep em{font-style:normal;font-weight:800}
+.kn.rep i{color:var(--muted);font-style:normal}
 .kn.ru{color:var(--ink);background:rgba(14,159,154,.13);border-left:4px solid var(--teal);padding:7px 9px}
 .kn.ru span{display:block;margin-top:4px;font-weight:800}
 .kn.warn{color:var(--ink);background:rgba(232,74,52,.14);border-left:4px solid #e84a34;padding:6px 8px;margin:8px 12px 0}
@@ -454,6 +460,10 @@ function kitHTML(name, list, pre){
   return `<article class="kit${all ? ' done' : ''}">
     <div class="kh"><div><div class="kt">${esc(name)}</div><div class="ks">${list.length} actividades · ${done}/${list.length} ${y ? 'listos' : 'comprados'}</div></div>
       ${co ? '<div class="plan num">Para<b>todos</b>los niños del bloque</div>' : `<div class="plan num">${ru ? 'Comprar' : 'Total misión'}<b>${tot}${unk.length ? '+' : ''}</b>${esc(un)}</div>`}</div>
+    ${co ? '' : `<div class="kn rep"><b>Reparto</b>${list.map((i, n) => { const q = qty(i, n);
+      const amt = i.pk == null ? `${q} ${esc(i.n.toLowerCase())} (tamaño sin definir)` : `${q * i.pk} ${esc(un)}`;
+      const dd = String(i.d || '').trim(); const extra = dd && !/^(na|x|unidad|paquete|marcador|cono|juego|n\/a|-)$/i.test(dd) ? ` · <i>${esc(dd)}</i>` : '';
+      return `<span><em>${esc(i.b)} · ${esc(i.t)} ${esc(FIRST(i.t))}</em> → <strong>${amt}</strong>${extra}</span>`; }).join('')}</div>`}
     ${ru ? `<p class="kn ru">♻️ <b>Se reutilizan.</b> Pidieron ${sum} en total, pero pasan de un bloque a otro: alcanza con lo que se usa a la vez en el bloque más grande (${esc(peak)}). Si pueden, compren un poco más por si dos grupos los usan al mismo tiempo.<span>Uso por bloque: ${Object.entries(byB).map(([b, v]) => b + ' ' + v).join(' · ')}</span></p>` : ''}
     ${unk.length ? `<p class="kn warn">+ ${unk.map(i => `${y ? i.q : st(i).cant} ${esc(i.n.toLowerCase())} de ${esc(i.b)} sin tamaño definido (pregúntale a ${esc(FIRST(i.t))})`).join(' · ')}</p>` : ''}
     ${co ? '<p class="kn">Se compran para todos los niños de cada bloque; las cantidades de abajo son las que pidió cada actividad, como referencia.</p>' : `<p class="kn">Compren la presentación que mejor cubra el total. ${y ? '' : 'Plan de referencia: ' + fmt(plan) + '.'}</p>`}
